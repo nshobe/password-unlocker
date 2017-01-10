@@ -31,14 +31,21 @@ esac
 
 # Usage, tell people what to do
 usage() {
-  echo "Usage:
+  cat << EOF
+#                     #
+## Password Unlocker ##
+#                     #
+
+Usage:
     [ -l => List users without functional passwords (sends to stdout) ]
     [ -a => Generate admin email report ]
     [ -u => Update User Passwords ]
     [ -r => Log to report file locally ]
     [ -v => Verbose: Enable CLI stdout logging ]
 
-Warning: This must be run as root!" !>&2
+Warning: This must be run as root!"
+
+EOF
   exit 1
 }
 
