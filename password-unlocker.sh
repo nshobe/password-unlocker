@@ -11,8 +11,8 @@ PATH='/bin:/usr/bin'
 WHOM=$(who am i | awk '{print $1}')
 OS=$(uname)
 HOST=$(hostname)
-HEADER="Users to be modified"
-FOOTER="Use the "u" option to update passwords"
+HEADER='Users to be modified'
+FOOTER='Use the "u" option to update passwords'
 ROOTHOME=$(echo ~root)
 REPORT='[your report file location]' # please ensure dir is 700
 OUTUSER='[your user list file location]' # less of a security concern, but please ensure dir is 700
@@ -27,6 +27,12 @@ case "$OS" in
     ACCFILTER='LK\|NP\|UN'
   ;;
   Linux)
+    PASSOPS=' -S '
+    HUMANS=':100:'
+    ACCFILTER='L\|NP'
+  ;;
+  *)
+    echo "Unknown OS, guessing it's kinda like linux."
     PASSOPS=' -S '
     HUMANS=':100:'
     ACCFILTER='L\|NP'
