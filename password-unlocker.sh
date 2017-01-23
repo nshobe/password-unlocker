@@ -1,4 +1,4 @@
-#!/bin/bash
+s!/bin/bash
 #
 # Password-Unlocker
 #
@@ -8,41 +8,47 @@
 
 # Environment
 PATH='/bin:/usr/bin'
-WHOM=$(who am i | awk '{print $1}')
+WHOM=$(who -m | awk '{print $1}')
 OS=$(uname)
 HOST=$(hostname)
+MAXAGE="30"
 HEADER='Users to be modified'
 FOOTER='Use the "u" option to update passwords'
 ROOTHOME=$(echo ~root)
-REPORT='[your report file location]' # please ensure dir is 700
-OUTUSER='[your user list file location]' # less of a security concern, but please ensure dir is 700
-ADMIN='[admin email]'
-RETURNADDY='[return address]'
-EXCLUDE='[A file to put users you want to exclude and avoid from modifying.]'
-EXCLUDEKEY='[A key you should generate and drop into your exclude file. ]'
+REPORT='/opt/unixadm/log/password-unlock.log'
+OUTUSER='/opt/unixadm/log/passwordlocked.out'
+ADMIN='nshobe'
+RETURNADDY='unixadm@transcentra.com'
+EXCLUDE='/opt/unixadm/etc/password-unlocker.conf'
+EXCLUDEKEY='tIPPGRF4nh54MCZ76WMxqiNBCJUJSOL1zQPg7r7AopwVzsiljkT1qXXiNS8IERLR'
 case "$OS" in
   SunOS)
     PASSOPS=' -s '
     HUMANS=':10:'
     ACCFILTER='LK\|NP\|UN'
+    TODAY=$(($(truss date 2>&1 | grep ^time | awk -F"= " '{print $2}') / 86400))
+    EXPIRE='passwd -f '
   ;;
   Linux)
     PASSOPS=' -S '
     HUMANS=':100:'
     ACCFILTER='L\|NP'
+    TODAY=$(($(date --utc --date " " +%s)/86400))
+    EXPIRE='passwd -e '
   ;;
   *)
     echo "Unknown OS, guessing it's kinda like linux."
     PASSOPS=' -S '
     HUMANS=':100:'
     ACCFILTER='L\|NP'
+    TODAY=$(($(date --utc --date " " +%s)/86400))
+    EXPIRE='passwd -e '
   ;;
 esac
 
 # Usage, tell people what to do
 usage() {
   cat << EOF
-
 #                     #
 ## Password Unlocker ##
 #                     #
@@ -100,12 +106,44 @@ getUsers() {
 
 ## Check to see which users don't have usable passwords
 checkUsers() {
-  verbose "Checking for users without usable passwords"
+  verbose "Checking for users with passwords older than 30 days"
   >$OUTUSER
   for i in $USERS; do
-    passwd $PASSOPS $i | grep $ACCFILTER | awk '{print $1}' >>$OUTUSER
+    verbose "Checking user $i"
+    CHANGED=$(grep -e "^$i:" /etc/shadow | awk -F":" '{print $3}')
+    AGE=$(echo $(( TODAY - CHANGED )))
+    ISHUMAN=$(grep "^$i:" /etc/passwd | grep $HUMANS )
+    INEXCLUDE=$(grep -v "^#\|^$" $EXCLUDE | grep "$i" $EXCLUDE )
+    if [ -n "$ISHUMAN" ]; then
+      verbose "$i seems to be in staff, GOOD!"
+      if [ -z "$INEXCLUDE" ]; then
+        verbose "$i seems to not be in exclude list, GOOD!"
+        if [[ "$AGE" -gt 30 && "$AGE" -lt 1000 ]]; then
+          echo $i >>$OUTUSER
+          report "User $i has been found to have an old password of $AGE days old."
+          verbose "User $i is past maximum age allowance"
+        else
+          verbose "User $i is not past maximum age allowance"
+        fi
+      else
+        verbose "$i is in exclude list, skipping over"
+      fi
+    else
+      verbose "$i is not in staff group, skipping"
+    fi
+    verbose "User $i has password of $AGE days old."
   done
 }
+# Initial Version, doesn't recognise expired, onlyed locked accounts.
+#checkUsers() {
+#  verbose "Checking for users without usable passwords"
+#  >$OUTUSER
+#  for i in $USERS; do
+#    verbose "checking user $i"
+#    passwd $PASSOPS $i | grep $ACCFILTER | awk '{print $1}' >>$OUTUSER
+#    verbose "last entry was `tail -1 $OUTUSER`"
+#  done
+#}
 
 ## List users (handy for email and other reporting)
 listUsers() {
@@ -159,9 +197,10 @@ On Server: $HOST
 
 Please login and update password in a timely manner.\n\n")
     # Change following email to $i and uncomment passwd command for production change over.
-    TO=$ADMIN
+    TO=nshobe
     mailSend
     #echo -e "$PASS\n$PASS" | passwd $i > /dev/null
+    #$EXPIRE $i
     report "User $i password has been reset to $PASS on $HOST and has been emailed."
   done<$OUTUSER
 }
@@ -170,6 +209,7 @@ Please login and update password in a timely manner.\n\n")
 resetUser() {
   verbose "Option c has been enabled, manually resetting password for $CHANGEUSER"
   report "!!!Manual user change has been enacted by $WHOM!!!"
+  PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
   SUBJECT="Reset Password on $HOST"
   TO=$CHANGEUSER
   HEADER="This email was generated from $HOST"
@@ -179,13 +219,12 @@ resetUser() {
 ### Your Password has been changed
 #
 Due to manual action your password has been changed. Your new credentials are:
-Username: $i
+Username: $CHANGEUSER
 Password: $PASS
 On Server: $HOST
 
 Please login and update password in a timely manner.
 ")
-  PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
   ISHUMAN=$(grep "^$CHANGEUSER\:" /etc/passwd | grep $HUMANS )
   INEXCLUDE=$(grep -v "^#\|^$" $EXCLUDE | grep "$CHANGEUSER" $EXCLUDE )
   if [ -z "$ISHUMAN" ]; then
@@ -196,6 +235,7 @@ Please login and update password in a timely manner.
     exit 1
   else
     echo -e "$PASS\n$PASS" | passwd $CHANGEUSER > /dev/null
+    $EXPIRE $CHANGEUSER
     mailSend
     report "!!!$CHANGEUSER was manually changed to $PASS by $WHOM!!!"
   fi
